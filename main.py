@@ -32,30 +32,46 @@ def write(data):
         json.dump(data, file, indent=2)
 
 
+# Get interface names
+CONNECTIONS = []
+a = str(subprocess.run("powershell.exe Get-NetAdapter -physical", shell=True, capture_output=True))
+for con in a.split('\\r\\n')[3:]:
+    if 'Up' in con:
+        CONNECTIONS.append(con.split(' ')[0])
+
+
 # Connect to the selected server
 def connect_selected():
+    itm = None
     try:
-        data = read()
         itm = lb.get(lb.curselection())
-        index1 = data['Servers'][itm][0]
-        index2 = data['Servers'][itm][1]
-        a = str(subprocess.run('netsh interface show interface', shell=True, capture_output=True))
-        a = a.split('        ')[4].split('\\')[0]
-        subprocess.run(f'netsh interface ip set dns "{a}" dhcp', shell=True)
-        subprocess.run(f'netsh interface ip set dns "{a}" static {index1}', shell=True)
-        subprocess.run(f'netsh interface ip add dns "{a}" {index2} index=2', shell=True)
-        var.set("Set DNS successfully")
     except:
-        var.set("DNS don't set")
+        var.set("Select the server!")
+        return
+    try:
+        server = read()
+        index1 = server['Servers'][itm][0]
+        index2 = server['Servers'][itm][1]
+        for interface in CONNECTIONS:
+            msg = subprocess.run(f'netsh interface ipv4 set dnsservers {interface} static {index1}',
+                                 shell=True, capture_output=True)
+            if 'parameter is incorrect' in str(msg):
+                raise ValueError
+            subprocess.run(f'netsh interface ipv4 add dnsservers {interface} {index2} index=2', shell=True)
+            var.set("Set DNS successfully")
+    except ValueError:
+        var.set("There is a problem with DNS")
 
 
 # Add Server popup page
 def popup():
+
     # Add server to file
     def add_dns_server():
-        data = read()
-        data['Servers'].update({e0.get(): [e1.get(), e2.get()]})
-        write(data)
+        server = read()
+        server['Servers'].update({e0.get(): [e1.get(), e2.get()]})
+        write(server)
+        var.set("Added DNS, please refresh the list")
 
     # Set popup
     info = Toplevel(ws)
@@ -77,7 +93,7 @@ def popup():
     e2.grid(row=2, column=1, pady=5)
 
     Button(info, bg=BT_BG, fg=BT_FG, text="Add Server", font=("Arial", 10), command=add_dns_server).grid(
-        row=4,column=1,pady=20)
+        row=4, column=1, pady=20)
 
     info.transient(ws)
     info.grab_set()
@@ -85,12 +101,13 @@ def popup():
 
 # Refresh ListBox
 def refresh_list():
-    data = read()
+    server = read()
     lb.delete(0, END)
     id = 0
-    for serv in data['Servers']:
+    for serv in server['Servers']:
         lb.insert(id, serv)
         id += 1
+    var.set("list updated")
 
 
 # Delete item from ListBox
@@ -98,19 +115,17 @@ def delete_list():
     try:
         itm = lb.get(lb.curselection())
         lb.delete(lb.curselection())
-        data = read()
-        del data['Servers'][itm]
-        write(data)
+        server = read()
+        del server['Servers'][itm]
+        write(server)
         var.set("Delete DNS successfully")
     except:
         var.set("Clear DNS successfully")
-        a = str(subprocess.run('netsh interface show interface', shell=True, capture_output=True))
-        a = a.split('        ')[4].split('\\')[0]
-        subprocess.run(f'netsh interface ip set dns "{a}" dhcp', shell=True)
+        for interface in CONNECTIONS:
+            subprocess.run(f'netsh interface ipv4 set dnsservers {interface} dhcp', shell=True)
 
 
 # Page content
-
 lb = Listbox(ws, bg=EN_BG, fg=EN_FG, font=("Arial", 11),
              selectbackground=EN_BG, selectforeground=LB_FG, justify=CENTER, width=100)
 lb.pack()
